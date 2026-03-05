@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Expense Dashboard</title>
+
+  <!-- Plotly for charts -->
+  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+  <!-- PapaParse for CSV parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- SheetJS for Excel export -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    body { font-family: system-ui, Arial; margin: 20px; max-width: 1100px; }
+    h1 { margin: 0 0 10px; }
+    .muted { color: #666; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 14px; flex: 1; min-width: 320px; }
+    .tabs { display: flex; gap: 8px; margin: 14px 0; flex-wrap: wrap; }
+    .tab { padding: 8px 12px; border: 1px solid #ddd; border-radius: 999px; cursor: pointer; user-select: none; }
+    .tab.active { background: #111; color: #fff; border-color: #111; }
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    select, button, input { padding: 8px 10px; border-radius: 8px; border: 1px solid #ccc; }
+    button { cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; font-size: 14px; }
+    th { background: #fafafa; position: sticky; top: 0; }
+    .tableWrap { max-height: 420px; overflow: auto; border: 1px solid #eee; border-radius: 10px; }
+    .error { color: #b00020; font-weight: 600; }
+    .ok { color: #0a7a2f; font-weight: 600; }
+  </style>
+</head>
+
+<body>
+  <h1>Expense Dashboard</h1>
+  <div class="muted">Upload Table A, Table C, and Table D (CSV). Everything runs in your browser.</div>
+
+  <div class="card" style="margin-top:14px;">
+    <div class="controls">
+      <label>
+        Upload CSV files (A/C/D):
+        <input id="fileInput" type="file" accept=".csv" multiple />
+      </label>
+
+      <span id="status" class="muted"></span>
+    </div>
+
+    <div id="mapping" style="margin-top:10px; display:none;">
+      <div class="muted" style="margin-bottom:8px;">Assign each file to a table if needed:</div>
+      <div id="mappingRows"></div>
+      <button id="applyMappingBtn" style="margin-top:10px;">Apply mapping</button>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs" style="display:none;">
+    <div class="tab active" data-tab="A">Table A (All)</div>
+    <div class="tab" data-tab="C">Table C (Joint share)</div>
+    <div class="tab" data-tab="D">Table D (Personal)</div>
+  </div>
+
+  <div id="main" style="display:none;">
+    <div class="row">
+      <div class="card">
+        <div class="controls" style="justify-content:space-between;">
+          <div>
+            <div><b>Category summary</b></div>
+            <div class="muted" id="summaryNote"></div>
+          </div>
+          <div class="controls">
+            <button id="exportCsvBtn">Export CSV</button>
+            <button id="exportXlsxBtn">Export Excel</button>
+          </div>
+        </div>
+        <div class="tableWrap" id="summaryTableWrap"></div>
+      </div>
+
+      <div class="card">
+        <div><b>Pie chart</b></div>
+        <div id="pie" style="height:360px;"></div>
+      </div>
+
+      <div class="card">
+        <div><b>Bar chart (sorted by spend)</b></div>
+        <div id="bar" style="height:360px;"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <div class="controls">
+        <div><b>Category transactions</b></div>
+        <select id="categorySelect"></select>
+      </div>
+      <div class="tableWrap" id="txTableWrap" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <div id="err" class="error" style="margin-top:14px;"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
