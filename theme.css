@@ -1,0 +1,75 @@
+:root{
+  --bg1:#ffd1e7;
+  --bg2:#e7d1ff;
+  --bg3:#d1f3ff;
+  --card:rgba(255,255,255,.55);
+  --cardBorder:rgba(255,255,255,.7);
+  --text:#111;
+  --muted:#5b5b5b;
+  --accent:#7c3aed;
+}
+
+body{
+  margin:20px;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  color:var(--text);
+  background:
+    radial-gradient(900px 600px at 15% 10%, var(--bg1), transparent 60%),
+    radial-gradient(900px 600px at 85% 20%, var(--bg2), transparent 60%),
+    radial-gradient(900px 600px at 60% 90%, var(--bg3), transparent 60%),
+    #fff;
+}
+
+.card{
+  background:var(--card);
+  border:1px solid var(--cardBorder);
+  border-radius:18px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.08);
+  backdrop-filter: blur(10px);
+}
+
+h1{
+  font-size:34px;
+  margin:0 0 10px;
+  background: linear-gradient(90deg, #ff4da6, #7c3aed, #00b3ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.muted{ color:var(--muted); }
+
+button, select, input{
+  border-radius:999px;
+  border:1px solid rgba(0,0,0,.12);
+  padding:9px 12px;
+  background:rgba(255,255,255,.7);
+}
+
+button{
+  background: linear-gradient(90deg, #ff4da6, #7c3aed);
+  color:#fff;
+  border:none;
+  font-weight:600;
+}
+
+button:hover{ filter: brightness(1.03); }
+
+.tableWrap{
+  border:1px solid rgba(0,0,0,.08);
+  border-radius:16px;
+  overflow:hidden;
+}
+
+table{
+  width:100%;
+  border-collapse: collapse;
+}
+
+th{
+  background:rgba(255,255,255,.75);
+}
+
+tr:nth-child(even) td{
+  background:rgba(255,255,255,.45);
+}
