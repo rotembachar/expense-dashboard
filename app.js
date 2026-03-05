@@ -2,35 +2,46 @@ const fileInput = document.getElementById("fileInput");
 const statusEl = document.getElementById("status");
 const errEl = document.getElementById("err");
 
-const tabsEl = document.getElementById("tabs");
 const mainEl = document.getElementById("main");
+const filtersCard = document.getElementById("filtersCard");
 
-const mappingEl = document.getElementById("mapping");
-const mappingRowsEl = document.getElementById("mappingRows");
-const applyMappingBtn = document.getElementById("applyMappingBtn");
+const kpisEl = document.getElementById("kpis");
+const kpiTotal = document.getElementById("kpiTotal");
+const kpiLargest = document.getElementById("kpiLargest");
+const kpiCount = document.getElementById("kpiCount");
 
-const summaryTableWrap = document.getElementById("summaryTableWrap");
-const txTableWrap = document.getElementById("txTableWrap");
-const categorySelect = document.getElementById("categorySelect");
-const summaryNote = document.getElementById("summaryNote");
+const accountFilter = document.getElementById("accountFilter");
+const categoryFilter = document.getElementById("categoryFilter");
+const dateFrom = document.getElementById("dateFrom");
+const dateTo = document.getElementById("dateTo");
+const clearFiltersBtn = document.getElementById("clearFiltersBtn");
 
 const exportCsvBtn = document.getElementById("exportCsvBtn");
 const exportXlsxBtn = document.getElementById("exportXlsxBtn");
 
-let rawFiles = [];
-let tables = { A: null, C: null, D: null };
-let activeTab = "A";
+const summaryTableWrap = document.getElementById("summaryTableWrap");
+const txTableWrap = document.getElementById("txTableWrap");
+const categorySelect = document.getElementById("categorySelect");
+const categoryTxWrap = document.getElementById("categoryTxWrap");
 
-const REQUIRED = ["Date", "Merchant", "Category", "FinalAmount"];
+const REQUIRED = ["Date", "Merchant", "Category", "FinalAmount", "AccountType"];
+
+let allRows = [];
+let filteredRows = [];
 
 function resetUI() {
   errEl.textContent = "";
   statusEl.textContent = "";
-  tabsEl.style.display = "none";
   mainEl.style.display = "none";
-  mappingEl.style.display = "none";
-  mappingRowsEl.innerHTML = "";
-  tables = { A: null, C: null, D: null };
+  filtersCard.style.display = "none";
+  kpisEl.style.display = "none";
+  allRows = [];
+  filteredRows = [];
+  categoryFilter.innerHTML = "";
+  categorySelect.innerHTML = "";
+  summaryTableWrap.innerHTML = "";
+  txTableWrap.innerHTML = "";
+  categoryTxWrap.innerHTML = "";
 }
 
 function parseCsvFile(file) {
@@ -38,17 +49,47 @@ function parseCsvFile(file) {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: (res) => resolve({ file, rows: res.data }),
+      complete: (res) => resolve(res.data),
       error: (err) => reject(err),
     });
   });
 }
 
-function normalizeRow(row) {
-  // Ensure numeric FinalAmount
-  const out = { ...row };
-  const fa = Number(String(out.FinalAmount ?? "").replace(/,/g, ""));
-  out.FinalAmount = isNaN(fa) ? 0 : fa;
+function toNumber(x) {
+  const v = Number(String(x ?? "").replace(/,/g, "").trim());
+  return isNaN(v) ? 0 : v;
+}
+
+function parseDateFlexible(s) {
+  // returns a Date or null
+  const str = String(s ?? "").trim();
+  if (!str || str.toLowerCase() === "manual") return null;
+
+  // try ISO first
+  const iso = new Date(str);
+  if (!isNaN(iso.getTime())) return iso;
+
+  // try DD/MM/YY or DD/MM/YYYY
+  const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!m) return null;
+  let dd = Number(m[1]);
+  let mm = Number(m[2]);
+  let yy = Number(m[3]);
+  if (yy < 100) yy = 2000 + yy;
+  const d = new Date(yy, mm - 1, dd);
+  if (isNaN(d.getTime())) return null;
+  return d;
+}
+
+function normalizeRow(r) {
+  const out = { ...r };
+  out.FinalAmount = toNumber(out.FinalAmount);
+  out.OriginalAmount = toNumber(out.OriginalAmount);
+  out.AccountType = String(out.AccountType ?? "").trim().toLowerCase();
+  out.Category = String(out.Category ?? "other").trim();
+  out.Merchant = String(out.Merchant ?? "").trim();
+  out.Date = String(out.Date ?? "").trim();
+  out._dateObj = parseDateFlexible(out.Date);
   return out;
 }
 
@@ -58,107 +99,92 @@ function validateRows(rows) {
   return missing;
 }
 
-function guessTableKey(filename) {
-  const f = filename.toLowerCase();
-  if (f.includes("table a") || f.includes("table_a") || f.includes("a.csv")) return "A";
-  if (f.includes("table c") || f.includes("table_c") || f.includes("c.csv")) return "C";
-  if (f.includes("table d") || f.includes("table_d") || f.includes("d.csv")) return "D";
-  return null;
+function formatILS(n) {
+  // simple formatting, no locale assumptions
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  return `${sign}${abs.toFixed(2)} ILS`;
 }
 
-function renderMapping(filesParsed) {
-  mappingRowsEl.innerHTML = "";
-  filesParsed.forEach(({ file }) => {
-    const row = document.createElement("div");
-    row.className = "controls";
-    row.style.margin = "6px 0";
-
-    const label = document.createElement("div");
-    label.textContent = file.name;
-
-    const select = document.createElement("select");
-    select.dataset.filename = file.name;
-
-    ["", "A", "C", "D"].forEach(v => {
-      const opt = document.createElement("option");
-      opt.value = v;
-      opt.textContent = v ? `Table ${v}` : "Select table…";
-      select.appendChild(opt);
-    });
-
-    const guessed = guessTableKey(file.name);
-    if (guessed) select.value = guessed;
-
-    row.appendChild(label);
-    row.appendChild(select);
-    mappingRowsEl.appendChild(row);
-  });
-
-  mappingEl.style.display = "block";
-
-  applyMappingBtn.onclick = () => {
-    const selects = mappingRowsEl.querySelectorAll("select");
-    const map = {};
-    selects.forEach(s => map[s.dataset.filename] = s.value);
-
-    // Build tables from mapping
-    const used = new Set();
-    for (const fn in map) {
-      const key = map[fn];
-      if (!key) continue;
-      if (used.has(key)) {
-        errEl.textContent = `You assigned multiple files to Table ${key}. Please choose one file per table.`;
-        return;
-      }
-      used.add(key);
-    }
-
-    // Apply
-    tables = { A: null, C: null, D: null };
-    filesParsed.forEach(fp => {
-      const key = map[fp.file.name];
-      if (!key) return;
-      const rows = fp.rows.map(normalizeRow);
-      tables[key] = rows;
-    });
-
-    // Require at least one
-    if (!tables.A && !tables.C && !tables.D) {
-      errEl.textContent = "Please assign at least one file to A, C, or D.";
-      return;
-    }
-
-    startDashboard();
-  };
+function uniqueSorted(arr) {
+  return Array.from(new Set(arr)).sort((a, b) => a.localeCompare(b));
 }
 
 function buildCategorySummary(rows) {
   const totals = new Map();
+  const counts = new Map();
+
   rows.forEach(r => {
-    const cat = (r.Category || "other").trim();
-    const v = Number(r.FinalAmount) || 0;
-    totals.set(cat, (totals.get(cat) || 0) + v);
+    const cat = r.Category || "other";
+    totals.set(cat, (totals.get(cat) || 0) + (r.FinalAmount || 0));
+    counts.set(cat, (counts.get(cat) || 0) + 1);
   });
 
-  const summary = Array.from(totals.entries())
-    .map(([Category, TotalFinalAmount]) => ({ Category, TotalFinalAmount }))
+  return Array.from(totals.entries())
+    .map(([Category, TotalFinalAmount]) => ({
+      Category,
+      TotalFinalAmount,
+      Transactions: counts.get(Category) || 0
+    }))
     .sort((a, b) => b.TotalFinalAmount - a.TotalFinalAmount);
-
-  return summary;
 }
 
-function renderTable(container, rows) {
+function renderTable(container, rows, columns) {
   if (!rows.length) {
-    container.innerHTML = "<div class='muted'>No rows.</div>";
+    container.innerHTML = "<div class='muted' style='padding:10px;'>No rows.</div>";
     return;
   }
-  const cols = Object.keys(rows[0]);
+
+  const cols = columns || Object.keys(rows[0]);
   const thead = `<thead><tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead>`;
   const tbody = `<tbody>${
     rows.map(r => `<tr>${cols.map(c => `<td>${r[c] ?? ""}</td>`).join("")}</tr>`).join("")
   }</tbody>`;
 
   container.innerHTML = `<table>${thead}${tbody}</table>`;
+}
+
+function computeLargestExpense(rows) {
+  // exclude health category and rent-related merchants
+  const rentRegex = /rent|שכר דירה/i;
+
+  const candidates = rows.filter(r => {
+    const isHealth = String(r.Category || "").toLowerCase() === "health";
+    const isRent = rentRegex.test(String(r.Merchant || ""));
+    return !isHealth && !isRent;
+  });
+
+  if (!candidates.length) return null;
+
+  let best = candidates[0];
+  for (const r of candidates) {
+    if ((r.FinalAmount || 0) > (best.FinalAmount || 0)) best = r;
+  }
+  return best;
+}
+
+function applyFilters() {
+  const acc = accountFilter.value;
+  const cat = categoryFilter.value;
+
+  const from = dateFrom.value ? new Date(dateFrom.value + "T00:00:00") : null;
+  const to = dateTo.value ? new Date(dateTo.value + "T23:59:59") : null;
+
+  filteredRows = allRows.filter(r => {
+    if (acc !== "all" && r.AccountType !== acc) return false;
+    if (cat !== "all" && (r.Category || "") !== cat) return false;
+
+    // date filter only if row has parseable date
+    if (from || to) {
+      if (!r._dateObj) return false;
+      if (from && r._dateObj < from) return false;
+      if (to && r._dateObj > to) return false;
+    }
+
+    return true;
+  });
+
+  renderDashboard();
 }
 
 function renderCharts(summary) {
@@ -184,64 +210,104 @@ function renderCharts(summary) {
   }, { responsive: true });
 }
 
-function getActiveRows() {
-  return tables[activeTab] || [];
+function renderAccountBar(rows) {
+  const personal = rows
+    .filter(r => r.AccountType === "personal")
+    .reduce((s, r) => s + (r.FinalAmount || 0), 0);
+
+  const joint = rows
+    .filter(r => r.AccountType === "joint")
+    .reduce((s, r) => s + (r.FinalAmount || 0), 0);
+
+  Plotly.newPlot("accountBar", [{
+    type: "bar",
+    x: ["personal", "joint"],
+    y: [personal, joint],
+    hovertemplate: "%{x}<br>%{y:.2f} ILS<extra></extra>",
+  }], { margin: { t: 10, l: 40, r: 10, b: 40 } }, { responsive: true });
 }
 
-function renderActiveTab() {
-  const rows = getActiveRows();
-  if (!rows.length) {
-    errEl.textContent = `No data loaded for Table ${activeTab}.`;
+function renderDashboard() {
+  if (!filteredRows.length) {
     mainEl.style.display = "none";
-    return;
-  }
-
-  // Validate columns
-  const missing = validateRows(rows);
-  if (missing.length) {
-    errEl.textContent = `Table ${activeTab} is missing columns: ${missing.join(", ")}.`;
-    mainEl.style.display = "none";
+    errEl.textContent = "No rows match your filters.";
     return;
   }
 
   errEl.textContent = "";
   mainEl.style.display = "block";
 
-  const summary = buildCategorySummary(rows);
-  summaryNote.textContent = `Based on FinalAmount (Table ${activeTab}).`;
+  // KPIs
+  const total = filteredRows.reduce((s, r) => s + (r.FinalAmount || 0), 0);
+  const largest = computeLargestExpense(filteredRows);
 
-  // Summary table
-  renderTable(summaryTableWrap, summary);
+  kpiTotal.textContent = formatILS(total);
+  kpiLargest.textContent = largest ? `${formatILS(largest.FinalAmount)} (${largest.Merchant || "unknown"})` : "-";
+  kpiCount.textContent = String(filteredRows.length);
+  kpisEl.style.display = "flex";
+
+  // Category summary
+  const summary = buildCategorySummary(filteredRows);
+  const summaryDisplay = summary.map(x => ({
+    Category: x.Category,
+    TotalSpending: x.TotalFinalAmount.toFixed(2),
+    Transactions: x.Transactions
+  }));
+  renderTable(summaryTableWrap, summaryDisplay, ["Category", "TotalSpending", "Transactions"]);
 
   // Charts
   renderCharts(summary);
+  renderAccountBar(filteredRows);
 
-  // Category selector
-  const cats = summary.map(x => x.Category);
+  // Category explorer
+  const cats = uniqueSorted(filteredRows.map(r => r.Category || "other"));
   categorySelect.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join("");
   const selected = categorySelect.value || cats[0];
+  renderCategoryExplorer(selected);
 
-  renderCategoryTransactions(rows, selected);
+  categorySelect.onchange = () => renderCategoryExplorer(categorySelect.value);
 
-  categorySelect.onchange = () => {
-    renderCategoryTransactions(rows, categorySelect.value);
-  };
+  // Transactions table (sorted desc)
+  const tx = [...filteredRows].sort((a, b) => (b.FinalAmount || 0) - (a.FinalAmount || 0));
+  const txDisplay = tx.map(r => ({
+    Date: r.Date,
+    Merchant: r.Merchant,
+    Category: r.Category,
+    AccountType: r.AccountType,
+    FinalAmount: r.FinalAmount.toFixed(2)
+  }));
+  renderTable(txTableWrap, txDisplay, ["Date", "Merchant", "Category", "AccountType", "FinalAmount"]);
 
-  // Exports for active tab
-  exportCsvBtn.onclick = () => exportCsv(rows, `Table_${activeTab}.csv`);
-  exportXlsxBtn.onclick = () => exportXlsx(rows, summary, `Table_${activeTab}.xlsx`);
+  // Exports
+  exportCsvBtn.onclick = () => exportCsv(filteredRows, "filtered_transactions.csv");
+  exportXlsxBtn.onclick = () => exportXlsx(filteredRows, summaryDisplay, "expense_dashboard.xlsx");
 }
 
-function renderCategoryTransactions(rows, category) {
-  const filtered = rows
-    .filter(r => (r.Category || "").trim() === category)
-    .sort((a, b) => (Number(b.FinalAmount) || 0) - (Number(a.FinalAmount) || 0));
+function renderCategoryExplorer(category) {
+  const rows = filteredRows
+    .filter(r => (r.Category || "") === category)
+    .sort((a, b) => (b.FinalAmount || 0) - (a.FinalAmount || 0));
 
-  renderTable(txTableWrap, filtered);
+  const display = rows.map(r => ({
+    Date: r.Date,
+    Merchant: r.Merchant,
+    AccountType: r.AccountType,
+    Currency: r.Currency,
+    OriginalAmount: (r.OriginalAmount ?? 0).toFixed(2),
+    FinalAmount: (r.FinalAmount ?? 0).toFixed(2)
+  }));
+
+  renderTable(categoryTxWrap, display, ["Date", "Merchant", "AccountType", "Currency", "OriginalAmount", "FinalAmount"]);
 }
 
 function exportCsv(rows, filename) {
-  const csv = Papa.unparse(rows);
+  // Remove helper fields
+  const cleaned = rows.map(r => {
+    const { _dateObj, ...rest } = r;
+    return rest;
+  });
+
+  const csv = Papa.unparse(cleaned);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -256,7 +322,12 @@ function exportCsv(rows, filename) {
 function exportXlsx(rows, summary, filename) {
   const wb = XLSX.utils.book_new();
 
-  const ws1 = XLSX.utils.json_to_sheet(rows);
+  const cleaned = rows.map(r => {
+    const { _dateObj, ...rest } = r;
+    return rest;
+  });
+
+  const ws1 = XLSX.utils.json_to_sheet(cleaned);
   XLSX.utils.book_append_sheet(wb, ws1, "Transactions");
 
   const ws2 = XLSX.utils.json_to_sheet(summary);
@@ -265,69 +336,61 @@ function exportXlsx(rows, summary, filename) {
   XLSX.writeFile(wb, filename);
 }
 
-function startDashboard() {
-  mappingEl.style.display = "none";
+function populateCategoryFilter(rows) {
+  const cats = uniqueSorted(rows.map(r => r.Category || "other"));
+  categoryFilter.innerHTML =
+    `<option value="all">All categories</option>` +
+    cats.map(c => `<option value="${c}">${c}</option>`).join("");
+}
 
-  tabsEl.style.display = "flex";
-  document.getElementById("main").style.display = "block";
+function wireFilters() {
+  accountFilter.onchange = applyFilters;
+  categoryFilter.onchange = applyFilters;
+  dateFrom.onchange = applyFilters;
+  dateTo.onchange = applyFilters;
 
-  // Wire tabs
-  tabsEl.querySelectorAll(".tab").forEach(tab => {
-    tab.onclick = () => {
-      tabsEl.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-      tab.classList.add("active");
-      activeTab = tab.dataset.tab;
-      renderActiveTab();
-    };
-  });
-
-  // If A exists, default to A, else first available
-  if (!tables.A && tables.C) activeTab = "C";
-  if (!tables.A && !tables.C && tables.D) activeTab = "D";
-
-  // Set active class
-  tabsEl.querySelectorAll(".tab").forEach(t => {
-    t.classList.toggle("active", t.dataset.tab === activeTab);
-  });
-
-  renderActiveTab();
-  statusEl.innerHTML = "<span class='ok'>Loaded.</span>";
+  clearFiltersBtn.onclick = () => {
+    accountFilter.value = "all";
+    categoryFilter.value = "all";
+    dateFrom.value = "";
+    dateTo.value = "";
+    applyFilters();
+  };
 }
 
 fileInput.addEventListener("change", async (e) => {
   resetUI();
-  const files = Array.from(e.target.files || []);
-  rawFiles = files;
+  const file = (e.target.files || [])[0];
+  if (!file) return;
 
-  if (!files.length) return;
-
-  statusEl.textContent = "Parsing CSV files...";
+  statusEl.textContent = "Parsing CSV...";
   try {
-    const parsed = await Promise.all(files.map(parseCsvFile));
-
-    // Normalize and quick validate
-    const withRows = parsed.map(p => ({ ...p, rows: p.rows.map(normalizeRow) }));
-
-    // If exactly 3 files and names guessable, auto assign
-    const auto = { A: null, C: null, D: null };
-    withRows.forEach(p => {
-      const k = guessTableKey(p.file.name);
-      if (k && !auto[k]) auto[k] = p.rows;
-    });
-
-    const autoCount = ["A","C","D"].filter(k => auto[k]).length;
-    if (autoCount >= 1 && withRows.length <= 3) {
-      tables = auto;
-      startDashboard();
+    const rows = await parseCsvFile(file);
+    if (!rows.length) {
+      errEl.textContent = "CSV is empty.";
+      statusEl.textContent = "";
       return;
     }
 
-    // Otherwise show mapping UI
-    statusEl.innerHTML = "<span class='muted'>Please assign files to A/C/D.</span>";
-    renderMapping(withRows);
+    const missing = validateRows(rows);
+    if (missing.length) {
+      errEl.textContent = `Missing required columns: ${missing.join(", ")}.`;
+      statusEl.textContent = "";
+      return;
+    }
+
+    allRows = rows.map(normalizeRow);
+
+    populateCategoryFilter(allRows);
+    wireFilters();
+
+    filtersCard.style.display = "block";
+    statusEl.innerHTML = "<span class='ok'>Loaded.</span>";
+
+    applyFilters();
 
   } catch (err) {
-    errEl.textContent = "Failed to parse CSV. Make sure the file is a valid CSV exported from the agent.";
+    errEl.textContent = "Failed to parse CSV. Make sure it is a valid CSV exported from the agent.";
     statusEl.textContent = "";
   }
 });
