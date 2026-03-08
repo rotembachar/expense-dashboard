@@ -4,11 +4,15 @@ const errEl = document.getElementById("err");
 
 const mainEl = document.getElementById("main");
 const filtersCard = document.getElementById("filtersCard");
+const viewTabsCard = document.getElementById("viewTabsCard");
+const mainViewBtn = document.getElementById("mainViewBtn");
+const jointOriginalViewBtn = document.getElementById("jointOriginalViewBtn");
 
 const kpisEl = document.getElementById("kpis");
 const kpiTotal = document.getElementById("kpiTotal");
 const kpiLargest = document.getElementById("kpiLargest");
 const kpiCount = document.getElementById("kpiCount");
+const kpiTotalLabel = document.getElementById("kpiTotalLabel");
 
 const accountFilter = document.getElementById("accountFilter");
 const categoryFilter = document.getElementById("categoryFilter");
@@ -28,6 +32,7 @@ const REQUIRED = ["Date", "Merchant", "Category", "FinalAmount", "AccountType"];
 
 let allRows = [];
 let filteredRows = [];
+let currentView = "main";
 
 function resetUI() {
   errEl.textContent = "";
@@ -35,6 +40,8 @@ function resetUI() {
   mainEl.style.display = "none";
   filtersCard.style.display = "none";
   kpisEl.style.display = "none";
+  viewTabsCard.style.display = "none";
+  currentView = "main";
   allRows = [];
   filteredRows = [];
   categoryFilter.innerHTML = "";
@@ -162,6 +169,18 @@ function computeLargestExpense(rows) {
   }
   return best;
 }
+function getWorkingRows(rows) {
+  if (currentView === "jointOriginal") {
+    return rows
+      .filter(r => r.AccountType === "joint")
+      .map(r => ({
+        ...r,
+        FinalAmount: toNumber(r.OriginalAmount)
+      }));
+  }
+
+  return rows;
+}
 
 function applyFilters() {
   const acc = accountFilter.value;
@@ -170,11 +189,17 @@ function applyFilters() {
   const from = dateFrom.value ? new Date(dateFrom.value + "T00:00:00") : null;
   const to = dateTo.value ? new Date(dateTo.value + "T23:59:59") : null;
 
-  filteredRows = allRows.filter(r => {
-    if (acc !== "all" && r.AccountType !== acc) return false;
+  const baseRows = getWorkingRows(allRows);
+
+  filteredRows = baseRows.filter(r => {
+    if (currentView === "jointOriginal") {
+      if (r.AccountType !== "joint") return false;
+    } else {
+      if (acc !== "all" && r.AccountType !== acc) return false;
+    }
+
     if (cat !== "all" && (r.Category || "") !== cat) return false;
 
-    // date filter only if row has parseable date
     if (from || to) {
       if (!r._dateObj) return false;
       if (from && r._dateObj < from) return false;
@@ -241,6 +266,10 @@ function renderDashboard() {
   const total = filteredRows.reduce((s, r) => s + (r.FinalAmount || 0), 0);
   const largest = computeLargestExpense(filteredRows);
 
+  kpiTotalLabel.textContent =
+  currentView === "jointOriginal"
+    ? "Total joint spending (OriginalAmount)"
+    : "Total spending (FinalAmount)";
   kpiTotal.textContent = formatILS(total);
   kpiLargest.textContent = largest ? `${formatILS(largest.FinalAmount)} (${largest.Merchant || "unknown"})` : "-";
   kpiCount.textContent = String(filteredRows.length);
@@ -356,6 +385,16 @@ function wireFilters() {
     dateTo.value = "";
     applyFilters();
   };
+    mainViewBtn.onclick = () => {
+    currentView = "main";
+    applyFilters();
+  };
+
+  jointOriginalViewBtn.onclick = () => {
+    currentView = "jointOriginal";
+    accountFilter.value = "all";
+    applyFilters();
+  };
 }
 
 fileInput.addEventListener("change", async (e) => {
@@ -385,6 +424,7 @@ fileInput.addEventListener("change", async (e) => {
     wireFilters();
 
     filtersCard.style.display = "block";
+    viewTabsCard.style.display = "block";
     statusEl.innerHTML = "<span class='ok'>Loaded.</span>";
 
     applyFilters();
