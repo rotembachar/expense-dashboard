@@ -152,13 +152,11 @@ function renderTable(container, rows, columns) {
 }
 
 function computeLargestExpense(rows) {
-  // exclude health category and rent-related merchants
   const rentRegex = /rent|שכר דירה/i;
 
   const candidates = rows.filter(r => {
-    const isHealth = String(r.Category || "").toLowerCase() === "health";
     const isRent = rentRegex.test(String(r.Merchant || ""));
-    return !isHealth && !isRent;
+    return !isRent;
   });
 
   if (!candidates.length) return null;
@@ -167,8 +165,10 @@ function computeLargestExpense(rows) {
   for (const r of candidates) {
     if ((r.FinalAmount || 0) > (best.FinalAmount || 0)) best = r;
   }
+
   return best;
 }
+
 function getWorkingRows(rows) {
   if (currentView === "jointOriginal") {
     return rows
