@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Expense Dashboard</title>
   <link rel="stylesheet" href="theme.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
   <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
@@ -42,7 +43,7 @@
     <div class="controls">
       <label>
         Upload CSV:
-        <input id="fileInput" type="file" accept=".csv" />
+        <input id="fileInput" type="file" accept=".csv,.xlsx, .xls" />
       </label>
 
       <span id="status" class="muted"></span>
